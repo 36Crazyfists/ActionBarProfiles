@@ -2,7 +2,7 @@
 ## Title: Action Bar Profiles
 ## Author: Rhodan
 ## SavedVariables: ActionBarProfilesDBv3
-## Version: 11.0.0.2
+## Version: 11.0.2.1
 
 ActionBarProfiles.xml
 
