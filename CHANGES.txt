@@ -1,4 +1,4 @@
-11.0.0.3
+11.0.0.2
 	ActionBarProfiles.lua
 		- Modified ignoreList
 
