@@ -2,7 +2,11 @@ local addonName, addon = ...
 ABP = ABP or {}
 local L = LibStub("AceLocale-3.0"):GetLocale(addonName)
 
+---@class frame
 local frame = PaperDollActionBarProfilesPane
+
+-- Initialize the scrollBar field if it's expected to be part of frame
+frame.scrollBar = frame.scrollBar or CreateFrame("ScrollFrame", nil, frame)
 
 local ACTION_BAR_PROFILE_BUTTON_HEIGHT = 44
 
@@ -53,6 +57,9 @@ end
 -- This function is called to update the frame's content, particularly the state of the buttons.
 function frame:OnUpdate()
     local class = select(2, UnitClass("player"))  -- Get the player's class
+
+    -- Ensure that self.buttons is initialized
+    self.buttons = self.buttons or {}
 
     -- Iterate over each button in the scroll frame
     local button
@@ -127,7 +134,7 @@ end
 function frame:OnUseClick()
     -- Create a cache of the current state for efficiency
     local cache = addon:MakeCache()
-    
+
     -- Perform a check to see if there will be any issues applying the profile
     local fail, total = addon:UseProfile(self.selected, true, cache)
 
@@ -181,7 +188,7 @@ end
 -- This function handles the logic when the "favorite" button is clicked on a profile.
 function frame:OnFavClick(button)
     -- Get the current player's name and realm to create a unique identifier.
-    local player = UnitName("player") .. "-" .. GetRealmName("player")
+    local player = UnitName("player") .. "-" .. GetRealmName()
     -- Get the current specialization of the player.
     local spec = GetSpecializationInfo(GetSpecialization())
 
@@ -193,7 +200,7 @@ end
 -- This function handles the logic when the "unfavorite" button is clicked on a profile.
 function frame:OnUnfavClick(button)
     -- Get the current player's name and realm to create a unique identifier.
-    local player = UnitName("player") .. "-" .. GetRealmName("player")
+    local player = UnitName("player") .. "-" .. GetRealmName()
     -- Get the current specialization of the player.
     local spec = GetSpecializationInfo(GetSpecialization())
 
@@ -215,7 +222,7 @@ function frame:Update()
     local offset = HybridScrollFrame_GetOffset(self)
 
     -- Get the current player information.
-    local player = UnitName("player") .. "-" .. GetRealmName("player")
+    local player = UnitName("player") .. "-" .. GetRealmName()
     local class = select(2, UnitClass("player"))
     local spec = GetSpecializationInfo(GetSpecialization())
 
