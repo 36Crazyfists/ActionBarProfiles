@@ -2,6 +2,11 @@ local addonName, addon = ...
 
 local L = LibStub("AceLocale-3.0"):GetLocale(addonName)
 
+-- Ensure PaperDollActionBarProfilesSaveDialog is defined, or create a dummy frame to avoid errors
+if not PaperDollActionBarProfilesSaveDialog then
+    PaperDollActionBarProfilesSaveDialog = CreateFrame("Frame", "PaperDollActionBarProfilesSaveDialog", UIParent)
+end
+
 local frame = PaperDollActionBarProfilesSaveDialog
 
 -- This function returns a table of available options in the save dialog.
@@ -64,7 +69,9 @@ function frame:OnOkayClick()
             addon:RenameProfile(self.name, name, true)
 
             -- Hack: Update the selection in the profile pane to the new name
-            PaperDollActionBarProfilesPane.selected = name
+            if PaperDollActionBarProfilesPane then
+                PaperDollActionBarProfilesPane.selected = name
+            end
         end
 
         -- Update the profile options with the new settings
