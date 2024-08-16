@@ -3,6 +3,9 @@ local addonName, addon = ...
 local L = LibStub("AceLocale-3.0"):GetLocale(addonName)
 local DEBUG = "|cffff0000Debug:|r "
 
+---@type table
+_G.ActionBarProfilesDBv3 = _G.ActionBarProfilesDBv3 or {}
+
 local S2KFI = LibStub("LibS2kFactionalItems-1.0")
 ABP = ABP or {}
 
@@ -363,12 +366,10 @@ _G["GetMySpecAndConfig"] = GetMySpecAndConfig
 
 -- Function to compare the current talent configuration with the saved profile and unlearn mismatched talents
 function addon:AreTalentsMatching(profile)
-    --print("AreTalentsMatching called for profile: " .. (profile.name or "Unknown"))
-
     -- Retrieve the current talent configuration
     local configID = C_ClassTalents.GetActiveConfigID()
     if not configID then
-        --print("No active config ID found.")
+        -- Return false if no active configuration is found
         return false, {}, {}
     end
 
@@ -388,102 +389,61 @@ function addon:AreTalentsMatching(profile)
         profileTalentLookup[talent.nodeID] = talent
     end
 
-    -- Initialize tables to store current and profile talents for debugging
-    local currentTalents = {}
-    local profileTalents = {}
-
-    -- Function to check if a talent is free
-    local function IsFreeTalent(nodeInfo)
-        return nodeInfo.currentRank > 0 and nodeInfo.ranksPurchased == 0 and not nodeInfo.canPurchaseRank
-    end
-
     -- Iterate over each node in the active talent tree
     for _, treeID in ipairs(configInfo.treeIDs) do
         local nodes = C_Traits.GetTreeNodes(treeID)
         for _, nodeID in ipairs(nodes) do
             local nodeInfo = C_Traits.GetNodeInfo(configID, nodeID)
+            local profileTalent = profileTalentLookup[nodeID]
 
             -- Skip free talents, as they should not be unlearned or learned
-            if nodeInfo and not IsFreeTalent(nodeInfo) then
-                local profileTalent = profileTalentLookup[nodeID]
+            if nodeInfo and not (nodeInfo.currentRank > 0 and nodeInfo.ranksPurchased == 0 and not nodeInfo.canPurchaseRank) then
+                if profileTalent then
+                    -- Compare entryIDs if it's a selection node
+                    if profileTalent.isSelectionNode and nodeInfo.activeEntry and nodeInfo.activeEntry.entryID ~= profileTalent.entryID then
+                        -- Mismatch found: Active selection differs from profile
+                        table.insert(talentsToUnlearn, {
+                            nodeInfo = nodeInfo,
+                            rank = nodeInfo.currentRank,
+                            spellID = nodeInfo.activeEntry and nodeInfo.activeEntry.spellID,
+                            treeType = (nodeInfo.posX < 10000) and "Class" or "Spec"
+                        })
 
-                -- Store current talents for debugging
-                if nodeInfo.currentRank > 0 then
-                    table.insert(currentTalents, {
-                        treeType = (nodeInfo.posX < 10000) and "Class" or "Spec",
-                        nodeInfo = nodeInfo,
-                        rank = nodeInfo.currentRank,
-                        spellID = nodeInfo.spellID
-                    })
-                end
+                        table.insert(talentsToLearn, {
+                            nodeID = nodeID,
+                            entryID = profileTalent.entryID,
+                            isSelectionNode = true,
+                            posX = profileTalent.posX,
+                            posY = profileTalent.posY,
+                            rank = profileTalent.ranksPurchased,
+                            spellID = profileTalent.spellID
+                        })
 
-                -- If the talent is active but not in the profile, mark it for unlearning
-                if nodeInfo.currentRank > 0 and (not profileTalent or profileTalent.ranksPurchased == 0) then
+                        -- Log mismatch for debugging
+                        print(string.format("Mismatch detected: NodeID %d - Active EntryID %d, Expected EntryID %d", nodeID, nodeInfo.activeEntry.entryID, profileTalent.entryID))
+                    elseif nodeInfo.currentRank < profileTalent.ranksPurchased then
+                        -- Handle normal nodes where ranks don't match
+                        table.insert(talentsToLearn, {
+                            nodeID = nodeID,
+                            entryID = profileTalent.entryID,
+                            isSelectionNode = false,
+                            posX = profileTalent.posX,
+                            posY = profileTalent.posY,
+                            rank = profileTalent.ranksPurchased,
+                            spellID = profileTalent.spellID
+                        })
+                    end
+                elseif nodeInfo.currentRank > 0 then
+                    -- Talent is active but not in the profile
                     table.insert(talentsToUnlearn, {
                         nodeInfo = nodeInfo,
                         rank = nodeInfo.currentRank,
-                        spellID = nodeInfo.spellID,
+                        spellID = nodeInfo.activeEntry and nodeInfo.activeEntry.spellID,
                         treeType = (nodeInfo.posX < 10000) and "Class" or "Spec"
-                    })
-                end
-
-                -- If the talent is not active but should be, mark it for learning
-                if profileTalent and nodeInfo.currentRank < profileTalent.ranksPurchased then
-                    table.insert(talentsToLearn, {
-                        nodeID = nodeID,
-                        entryID = profileTalent.entryID,
-                        isSelectionNode = profileTalent.isSelectionNode,
-                        posX = profileTalent.posX,
-                        posY = profileTalent.posY,
-                        rank = profileTalent.ranksPurchased,
-                        spellID = profileTalent.spellID
-                    })
-
-                    -- Store profile talents for debugging
-                    table.insert(profileTalents, {
-                        treeType = (profileTalent.posX < 10000) and "Class" or "Spec",
-                        nodeID = profileTalent.nodeID,
-                        posX = profileTalent.posX,
-                        posY = profileTalent.posY,
-                        rank = profileTalent.ranksPurchased,
-                        spellID = profileTalent.spellID
                     })
                 end
             end
         end
-    end
-
-    -- Print the results for debugging
-    --print("Current Talents (in order):")
-    for _, talent in ipairs(currentTalents) do
-        local spellInfo = talent.spellID and ("SpellID: " .. talent.spellID) or ""
-        --print(string.format("[%s] NodeID: %d, posX: %.2f, posY: %.2f, Rank: %d %s", talent.treeType, talent.nodeInfo.ID, talent.nodeInfo.posX, talent.nodeInfo.posY, talent.rank, spellInfo))
-    end
-
-    --print("Profile Talents (in order):")
-    for _, talent in ipairs(profileTalents) do
-        local spellInfo = talent.spellID and ("SpellID: " .. talent.spellID) or ""
-        --print(string.format("[%s] NodeID: %d, posX: %.2f, posY: %.2f, Rank: %d %s", talent.treeType, talent.nodeID, talent.posX, talent.posY, talent.rank, spellInfo))
-    end
-
-    --print("Talents to Unlearn (in order):")
-    for _, talent in ipairs(talentsToUnlearn) do
-        local spellInfo = talent.spellID and ("SpellID: " .. talent.spellID) or ""
-        --print(string.format("[%s] NodeID: %d, posX: %.2f, posY: %.2f, Rank: %d %s", talent.treeType, talent.nodeInfo.ID, talent.nodeInfo.posX, talent.nodeInfo.posY, talent.rank, spellInfo))
-    end
-
-    --print("Talents to Learn (in order):")
-    for _, talent in ipairs(talentsToLearn) do
-        -- Safeguard against nil values
-        local treeType = talent.treeType or "Unknown"
-        local nodeID = talent.nodeID or 0
-        local posX = talent.posX or 0
-        local posY = talent.posY or 0
-        local rank = talent.rank or 0
-        local spellInfo = talent.spellID and ("SpellID: " .. talent.spellID) or ""
-
-        -- Print the talent information
-        --print(string.format("[%s] NodeID: %d, posX: %.2f, posY: %.2f, Rank: %d %s", treeType, nodeID, posX, posY, rank, spellInfo))
     end
 
     -- Return whether talents match and the list of talents to learn/unlearn
@@ -521,9 +481,8 @@ function addon:RestoreTalents(profile, check, cache, res)
         return
     end
 
-    -- Check if the number of talents to unlearn is 25 or greater
+    -- Check if the number of talents to unlearn is 5 or greater
     if #talentsToUnlearn >= 5 then
-        --print("More than 5 talents to unlearn. Proceeding with FixRestoreTalents method.")
         self:FixRestoreTalents(profile)
         return
     end
@@ -547,14 +506,12 @@ function addon:RestoreTalents(profile, check, cache, res)
             -- Recheck talents after learning to ensure they match the profile
             local talentsMatchAfterLearn, _, _ = self:AreTalentsMatching(profile)
             if not talentsMatchAfterLearn then
-                --print("Talents did not match after learning. Proceeding with FixRestoreTalents method.")
                 self:FixRestoreTalents(profile)
             end
 
-            if PlayerTalentFrame then
-                HideUIPanel(PlayerTalentFrame)
-                ShowUIPanel(PlayerTalentFrame)
-                --print("Talent frame refreshed.")
+            if PlayerSpellsFrame then
+                HideUIPanel(PlayerSpellsFrame)
+                ShowUIPanel(PlayerSpellsFrame)
             end
             return
         end
@@ -679,9 +636,9 @@ function addon:FixRestoreTalents(profile)
                 --print("Talent configuration committed successfully.")
             end
 
-            if PlayerTalentFrame then
-                HideUIPanel(PlayerTalentFrame)
-                ShowUIPanel(PlayerTalentFrame)
+            if PlayerSpellsFrame then
+                HideUIPanel(PlayerSpellsFrame)
+                ShowUIPanel(PlayerSpellsFrame)
                 --print("Talent frame refreshed.")
             end
             return
@@ -691,6 +648,8 @@ function addon:FixRestoreTalents(profile)
         local nodeInfo = C_Traits.GetNodeInfo(configID, talent.nodeID)
 
         -- Check if it's a free talent; if so, skip it
+        --if nodeInfo and nodeInfo.(isFree) then
+        --if nodeInfo and nodeInfo.currentRank > 0 and nodeInfo.ranksPurchased == 0 and not nodeInfo.canPurchaseRank then
         if nodeInfo and nodeInfo.isFree then
             --print("Skipping free talent node: " .. talent.nodeID)
             C_Timer.After(0.1, function()
@@ -708,22 +667,29 @@ function addon:FixRestoreTalents(profile)
                     local success = false
 
                     if talent.isSelectionNode then
-                        success = C_Traits.SetSelection(configID, talent.nodeID, talent.entryID)
-                        --print("Setting selection for node: " .. talent.nodeID .. " EntryID: " .. talent.entryID)
+                        -- Check if the selected entry is different from the profile's entry
+                        if nodeInfo.activeEntry and nodeInfo.activeEntry.entryID ~= talent.entryID then
+                            -- Change to the desired selection in the profile
+                            success = C_Traits.SetSelection(configID, talent.nodeID, talent.entryID)
+                            -- Debug output
+                            print(string.format("Switching choice node to entryID %d for nodeID %d", talent.entryID, talent.nodeID))
+                        else
+                            -- If already selected, consider it successful
+                            success = true
+                        end
                     else
                         success = C_Traits.PurchaseRank(configID, talent.nodeID)
-                        --print("Purchasing rank for node: " .. talent.nodeID .. " Success: " .. tostring(success))
                     end
 
                     if not success then
-                        --print("Unable to learn talent for node: " .. talent.nodeID)
+                        print("Unable to learn talent for node: " .. talent.nodeID)
                         break
                     else
                         ranksPurchased = ranksPurchased + 1
                     end
                 end
             else
-                --print("Prerequisites not met for talent or node not available: " .. talent.nodeID)
+                print("Prerequisites not met for talent or node not available: " .. talent.nodeID)
             end
         else
             --print("No node information found for node: " .. talent.nodeID)
@@ -740,25 +706,25 @@ function addon:FixRestoreTalents(profile)
 end
 
 
--- Function that handles the player's click on a talent in the PlayerTalentFrame
-function PlayerTalentFrameTalent_OnClick(self, button)
-    -- Check if a specialization is selected and it is the active one
-    if (selectedSpec and (activeSpec == selectedSpec)) then
-        -- Get the talent ID from the clicked talent frame
-        local talentID = self:GetID()
+-- -- Function that handles the player's click on a talent in the PlayerTalentFrame - FUNCTION NO LONGER USED
+-- function PlayerTalentFrameTalent_OnClick(self, button)
+    -- -- Check if a specialization is selected and it is the active one
+    -- if (selectedSpec and (activeSpec == selectedSpec)) then
+        -- -- Get the talent ID from the clicked talent frame
+        -- local talentID = self:GetID()
 
-        -- Retrieve information about the talent, including whether it is available and if it is already known
-        local _, _, _, _, available, _, _, _, _, known = GetTalentInfoByID(talentID, specs[selectedSpec].talentGroup, true);
+        -- -- Retrieve information about the talent, including whether it is available and if it is already known
+        -- local _, _, _, _, available, _, _, _, _, known = GetTalentInfoByID(talentID, specs[selectedSpec].talentGroup, true);
 
-        -- If the talent is available, not already known, and the left mouse button was clicked, learn the talent
-        if (available and not known and button == "LeftButton") then
-            return LearnTalent(talentID)
-        end
-    end
+        -- -- If the talent is available, not already known, and the left mouse button was clicked, learn the talent
+        -- if (available and not known and button == "LeftButton") then
+            -- return LearnTalent(talentID)
+        -- end
+    -- end
 
-    -- Return false if the conditions for learning the talent were not met
-    return false
-end
+    -- -- Return false if the conditions for learning the talent were not met
+    -- return false
+-- end
 
 
 -- Function to learn talents from a stored profile in the database
@@ -821,38 +787,43 @@ function addon:RestorePvpTalents(profile, check, cache, res)
                 local type, sub = strsplit(":", data)
                 local id = tonumber(sub)
 
-                if type == "pvptal" then
-                    -- Attempt to find the PvP talent in the cache
-                    local found = self:GetFromCache(cache.allPvpTalents[tier], id, name, not check and link)
-                    if found then
-                        -- Check if the PvP talent is already learned or can be learned
-                        if self:GetFromCache(cache.pvpTalents, id) or rest or select(2, GetPvpTalentInfoByID(id, 1)) == 0 then
-                            ok = true
-                            self:UpdateCache(pvpTalents, found, id, select(2, GetPvpTalentInfoByID(id)))
-                            if not check then
-                                -- Learn the PvP talent if it meets the criteria
-                                LearnPvpTalent(found, tier)
+                -- Correctly unpacking the values from GetPvpTalentInfoByID
+                if id then
+                    local talentID, name, icon, selected, available, spellID, unlocked, row, column, known, grantedByAura = GetPvpTalentInfoByID(id, 1)
+
+                    -- Proceed with your logic using these variables
+                    if type == "pvptal" then
+                        local found = self:GetFromCache(cache.allPvpTalents[tier], id, name, not check and link)
+                        if found then
+                            if self:GetFromCache(cache.pvpTalents, id) or rest or available then
+                                ok = true
+                                self:UpdateCache(pvpTalents, found, id, available)
+                                if not check then
+                                    -- Learn the PvP talent if it meets the criteria
+                                    ---@diagnostic disable-next-line
+                                    LearnPvpTalent(found, tier)
+                                end
+                            else
+                                -- If the PvP talent can't be learned, print an error message
+                                self:cPrintf(not check, L.msg_cant_learn_talent, link)
                             end
                         else
-                            -- If the PvP talent can't be learned, print an error message
-                            self:cPrintf(not check, L.msg_cant_learn_talent, link)
+                            -- If the PvP talent doesn't exist in the cache, print an error message
+                            self:cPrintf(not check, L.msg_talent_not_exists, link)
                         end
                     else
-                        -- If the PvP talent doesn't exist in the cache, print an error message
-                        self:cPrintf(not check, L.msg_talent_not_exists, link)
+                        -- If the link type is incorrect, print a bad link message
+                        self:cPrintf(not check, L.msg_bad_link, link)
                     end
                 else
-                    -- If the link type is incorrect, print a bad link message
+                    -- If the link data is missing, print a bad link message
                     self:cPrintf(not check, L.msg_bad_link, link)
                 end
-            else
-                -- If the link data is missing, print a bad link message
-                self:cPrintf(not check, L.msg_bad_link, link)
-            end
 
-            -- If the PvP talent wasn't learned successfully, increment the fail counter
-            if not ok then
-                fail = fail + 1
+                -- If the PvP talent wasn't learned successfully, increment the fail counter
+                if not ok then
+                    fail = fail + 1
+                end
             end
         end
     end
@@ -899,8 +870,9 @@ function addon:RestoreActions(profile, check, cache, res)
                 local id = tonumber(sub)
 
                 if type == "spell" or type == "talent" then
-                    if not IsSpellKnown(id) then
-                        self:Printf("Spell not found: [%s]", name)
+                    --if not IsSpellKnown(id) then
+                    if id and not IsSpellKnown(id) then
+                        --self:Printf("Spell not found: [%s]", name)
                         fail = fail + 1
                         ok = false
                     else
@@ -941,7 +913,7 @@ function addon:RestoreActions(profile, check, cache, res)
                     self:cPrintf(not ok and not check, L.msg_spell_not_exists, link)
 
                 elseif type == "item" then
-                    if PlayerHasToy(id) then
+                    if id and PlayerHasToy(id) then
                         ok = true
                         if not check then
                             self:PlaceItem(slot, id, link)  -- Place the toy in the slot.
@@ -985,7 +957,7 @@ function addon:RestoreActions(profile, check, cache, res)
                         if found then
                             ok = true
                             if not check then
-                                self:PlaceFlyout(slot, found, BOOKTYPE_SPELL, link)  -- Place the flyout in the slot.
+                                self:PlaceFlyout(slot, found, Enum.SpellBookSpellBank.Player, link)  -- Place the flyout in the slot.
                             end
                         end
                         self:cPrintf(not ok and not check, L.msg_spell_not_exists, link)
@@ -1067,185 +1039,189 @@ function addon:RestoreActions(profile, check, cache, res)
 end
 
 
--- Restores a single action in the specified action bar slot using the provided action data and cache.
-function addon:RestoreSingleAction(action, slot, cache)
-    local fail = 0  -- Initialize a failure counter.
-    
-    if action then  -- Check if the action is valid.
-        local link = action  -- Assign the action to a local variable.
-        local ok  -- Flag to indicate if the action was successfully restored.
+-- -- Restores a single action in the specified action bar slot using the provided action data and cache.
+-- function addon:RestoreSingleAction(action, slot, cache, check)
+    -- -- Retrieve the list of profiles associated with the addon.
+    -- local profiles = { addon:GetProfiles() }
+    -- local profile
 
-        -- Extract data and name from the action link.
-        local data, name = link:match("^|c.-|H(.-)|h%[(.-)%]|h|r$")
-        link = link:gsub("|Habp:.+|h(%[.+%])|h", "%1")
+    -- local fail = 0  -- Initialize a failure counter.
 
-        if data then  -- Ensure the data is valid.
-            -- Extract individual parts from the action data string.
-            local type, sub, p1, p2, _, _, _, p6 = strsplit(":", data)
-            local id = tonumber(sub)
+    -- if action then  -- Check if the action is valid.
+        -- local link = action  -- Assign the action to a local variable.
+        -- local ok  -- Flag to indicate if the action was successfully restored.
 
-            -- Handle spell and talent actions.
-            if type == "spell" or type == "talent" then
-                if id == ABP_RANDOM_MOUNT_SPELL_ID then  -- Special handling for random mount.
-                    ok = true
-                    if not check then
-                        self:PlaceMount(slot, 0, link)  -- Place a random mount in the slot.
-                    end
-                else
-                    -- Try to find the spell in the cache.
-                    local found = self:FindSpellInCache(cache.spells, id, name, not check and link)
-                    if found then
-                        ok = true
-                        if not check then
-                            self:PlaceSpell(slot, found, link)  -- Place the spell in the slot.
-                        end
-                    else
-                        -- If not found, try to find the talent in the cache.
-                        found = self:GetFromCache(cache.talents, id, name, not check and link)
-                        if found then
-                            ok = true
-                            if not check then
-                                self:PlaceTalent(slot, found, link)  -- Place the talent in the slot.
-                            end
-                        end
-                    end
-                end
-                self:cPrintf(not ok and not check, L.msg_spell_not_exists, link)
+        -- -- Extract data and name from the action link.
+        -- local data, name = link:match("^|c.-|H(.-)|h%[(.-)%]|h|r$")
+        -- link = link:gsub("|Habp:.+|h(%[.+%])|h", "%1")
 
-            -- Handle PvP talent actions (although likely unnecessary due to spell ID usage).
-            elseif type == "pvptal" then
-                local found = self:GetFromCache(cache.pvpTalents, id, name, not check and link)
-                if found then
-                    ok = true
-                    if not check then
-                        self:PlacePvpTalent(slot, found, link)  -- Place the PvP talent in the slot.
-                    end
-                end
-                self:cPrintf(not ok and not check, L.msg_spell_not_exists, link)
+        -- if data then  -- Ensure the data is valid.
+            -- -- Extract individual parts from the action data string.
+            -- local type, sub, p1, p2, _, _, _, p6 = strsplit(":", data)
+            -- local id = tonumber(sub)
 
-            -- Handle item actions, including toys and equipment.
-            elseif type == "item" then
-                if PlayerHasToy(id) then
-                    ok = true
-                    if not check then
-                        self:PlaceItem(slot, id, link)  -- Place the toy in the slot.
-                    end
-                else
-                    -- Try to find the item in the equipment cache.
-                    local found = self:FindItemInCache(cache.equip, id, name, not check and link)
-                    if found then
-                        ok = true
-                        if not check then
-                            self:PlaceInventoryItem(slot, found, link)  -- Place the inventory item in the slot.
-                        end
-                    else
-                        -- If not found, try to find the item in the bags cache.
-                        found = self:FindItemInCache(cache.bags, id, name, not check and link)
-                        if found then
-                            ok = true
-                            if not check then
-                                self:PlaceContainerItem(slot, found[1], found[2], link)  -- Place the container item in the slot.
-                            end
-                        end
-                    end
-                end
+            -- -- Handle spell and talent actions.
+            -- if type == "spell" or type == "talent" then
+                -- if id == ABP_RANDOM_MOUNT_SPELL_ID then  -- Special handling for random mount.
+                    -- ok = true
+                    -- if not check then
+                        -- self:PlaceMount(slot, 0, link)  -- Place a random mount in the slot.
+                    -- end
+                -- else
+                    -- -- Try to find the spell in the cache.
+                    -- local found = self:FindSpellInCache(cache.spells, id, name, not check and link)
+                    -- if found then
+                        -- ok = true
+                        -- if not check then
+                            -- self:PlaceSpell(slot, found, link)  -- Place the spell in the slot.
+                        -- end
+                    -- else
+                        -- -- If not found, try to find the talent in the cache.
+                        -- found = self:GetFromCache(cache.talents, id, name, not check and link)
+                        -- if found then
+                            -- ok = true
+                            -- if not check then
+                                -- self:PlaceTalent(slot, found, link)  -- Place the talent in the slot.
+                            -- end
+                        -- end
+                    -- end
+                -- end
+                -- self:cPrintf(not ok and not check, L.msg_spell_not_exists, link)
 
-                -- Attempt to place the item even if not found, possibly using a fallback ID conversion.
-                if not ok and not check then
-                    self:PlaceItem(slot, S2KFI:GetConvertedItemId(id) or id, link)
-                end
-                ok = true  -- Mark as successful to avoid clearing the slot.
+            -- -- Handle PvP talent actions (although likely unnecessary due to spell ID usage).
+            -- elseif type == "pvptal" then
+                -- local found = self:GetFromCache(cache.pvpTalents, id, name, not check and link)
+                -- if found then
+                    -- ok = true
+                    -- if not check then
+                        -- self:PlacePvpTalent(slot, found, link)  -- Place the PvP talent in the slot.
+                    -- end
+                -- end
+                -- self:cPrintf(not ok and not check, L.msg_spell_not_exists, link)
 
-            -- Handle battle pet actions.
-            elseif type == "battlepet" then
-                local found = self:GetFromCache(cache.pets, p6, id, not check and link)
-                if found then
-                    ok = true
-                    if not check then
-                        self:PlacePet(slot, found, link)  -- Place the pet in the slot.
-                    end
-                end
-                self:cPrintf(not ok and not check, L.msg_pet_not_exists, link)
+            -- -- Handle item actions, including toys and equipment.
+            -- elseif type == "item" then
+                -- if id and PlayerHasToy(id) then
+                    -- ok = true
+                    -- if not check then
+                        -- self:PlaceItem(slot, id, link)  -- Place the toy in the slot.
+                    -- end
+                -- else
+                    -- -- Try to find the item in the equipment cache.
+                    -- local found = self:FindItemInCache(cache.equip, id, name, not check and link)
+                    -- if found then
+                        -- ok = true
+                        -- if not check then
+                            -- self:PlaceInventoryItem(slot, found, link)  -- Place the inventory item in the slot.
+                        -- end
+                    -- else
+                        -- -- If not found, try to find the item in the bags cache.
+                        -- found = self:FindItemInCache(cache.bags, id, name, not check and link)
+                        -- if found then
+                            -- ok = true
+                            -- if not check then
+                                -- self:PlaceContainerItem(slot, found[1], found[2], link)  -- Place the container item in the slot.
+                            -- end
+                        -- end
+                    -- end
+                -- end
 
-            -- Handle ABP custom types like flyouts and macros.
-            elseif type == "abp" then
-                id = tonumber(p1)
+                -- -- Attempt to place the item even if not found, possibly using a fallback ID conversion.
+                -- if not ok and not check then
+                    -- self:PlaceItem(slot, S2KFI:GetConvertedItemId(id) or id, link)
+                -- end
+                -- ok = true  -- Mark as successful to avoid clearing the slot.
 
-                -- Handle flyout actions.
-                if sub == "flyout" then
-                    local found = self:FindFlyoutInCache(cache.flyouts, id, name, not check and link)
-                    if found then
-                        ok = true
-                        if not check then
-                            self:PlaceFlyout(slot, found, BOOKTYPE_SPELL, link)  -- Place the flyout in the slot.
-                        end
-                    end
-                    self:cPrintf(not ok and not check, L.msg_spell_not_exists, link)
+            -- -- Handle battle pet actions.
+            -- elseif type == "battlepet" then
+                -- local found = self:GetFromCache(cache.pets, p6, id, not check and link)
+                -- if found then
+                    -- ok = true
+                    -- if not check then
+                        -- self:PlacePet(slot, found, link)  -- Place the pet in the slot.
+                    -- end
+                -- end
+                -- self:cPrintf(not ok and not check, L.msg_pet_not_exists, link)
 
-                -- Handle macro actions.
-                elseif sub == "macro" then
-                    local found = self:GetFromCache(cache.macros, self:PackMacro(self:DecodeLink(p2)), name, not check and link)
-                    if found then
-                        ok = true
-                        if not check then
-                            self:PlaceMacro(slot, found, link)  -- Place the macro in the slot.
-                        end
-                    end
+            -- -- Handle ABP custom types like flyouts and macros.
+            -- elseif type == "abp" then
+                -- id = tonumber(p1)
 
-                    -- Skip handling if macros are disabled in the profile.
-                    if profile.skipMacros then
-                        self:cPrintf(not ok and not check, L.msg_macro_not_exists, link)
-                    else
-                    end
+                -- -- Handle flyout actions.
+                -- if sub == "flyout" then
+                    -- local found = self:FindFlyoutInCache(cache.flyouts, id, name, not check and link)
+                    -- if found then
+                        -- ok = true
+                        -- if not check then
+                            -- self:PlaceFlyout(slot, found, Enum.SpellBookSpellBank.Player, link)  -- Place the flyout in the slot.
+                        -- end
+                    -- end
+                    -- self:cPrintf(not ok and not check, L.msg_spell_not_exists, link)
 
-				-- Handle equipment set actions.
-				elseif sub == "equip" then
-					local equipmentSetID
-					-- Retrieve all equipment set IDs
-					local equipmentSetIDs = C_EquipmentSet.GetEquipmentSetIDs()
+                -- -- Handle macro actions.
+                -- elseif sub == "macro" then
+                    -- local found = self:GetFromCache(cache.macros, self:PackMacro(self:DecodeLink(p2)), name, not check and link)
+                    -- if found then
+                        -- ok = true
+                        -- if not check then
+                            -- self:PlaceMacro(slot, found, link)  -- Place the macro in the slot.
+                        -- end
+                    -- end
 
-					-- Find the correct equipment set ID by matching the name
-					for _, setID in ipairs(equipmentSetIDs) do
-						local setName = C_EquipmentSet.GetEquipmentSetInfo(setID)
-						if setName == name then
-							equipmentSetID = setID
-							break
-						end
-					end
+                    -- -- Skip handling if macros are disabled in the profile.
+                    -- if profile.skipMacros then
+                        -- self:cPrintf(not ok and not check, L.msg_macro_not_exists, link)
+                    -- end
 
-					if equipmentSetID then
-						ok = true
-						if not check then
-							self:PlaceEquipment(slot, name, link)  -- Place the equipment set in the slot.
-						end
-					end
+				-- -- Handle equipment set actions.
+				-- elseif sub == "equip" then
+					-- local equipmentSetID
+					-- -- Retrieve all equipment set IDs
+					-- local equipmentSetIDs = C_EquipmentSet.GetEquipmentSetIDs()
 
-					self:cPrintf(not ok and not check, L.msg_equip_not_exists, link)
-				else
-					self:cPrintf(not check, L.msg_bad_link, link)
-				end
-            else
-                self:cPrintf(not check, L.msg_bad_link, link)
-            end
-        else
-            self:cPrintf(not check, L.msg_bad_link, link)
-        end
+					-- -- Find the correct equipment set ID by matching the name
+					-- for _, setID in ipairs(equipmentSetIDs) do
+						-- local setName = C_EquipmentSet.GetEquipmentSetInfo(setID)
+						-- if setName == name then
+							-- equipmentSetID = setID
+							-- break
+						-- end
+					-- end
 
-        -- If the action was not successfully placed, increment the failure counter.
-        if not ok then
-            fail = fail + 1
-            if not profile.skipEmptySlots and not check then
-                self:ClearSlot(slot)  -- Clear the slot if it should not be left empty.
-            end
-        end
-    else
-        -- If no action is found and empty slots should not be skipped, clear the slot.
-        if not profile.skipEmptySlots and not check then
-            self:ClearSlot(slot)
-        end
-    end
-    return fail  -- Return the number of failures.
-end
+					-- if equipmentSetID then
+						-- ok = true
+						-- if not check then
+							-- self:PlaceEquipment(slot, name, link)  -- Place the equipment set in the slot.
+						-- end
+					-- end
+
+					-- self:cPrintf(not ok and not check, L.msg_equip_not_exists, link)
+				-- else
+					-- self:cPrintf(not check, L.msg_bad_link, link)
+				-- end
+            -- else
+                -- self:cPrintf(not check, L.msg_bad_link, link)
+            -- end
+        -- else
+            -- self:cPrintf(not check, L.msg_bad_link, link)
+        -- end
+
+        -- -- If the action was not successfully placed, increment the failure counter.
+        -- if not ok then
+            -- fail = fail + 1
+            -- if not profile.skipEmptySlots and not check then
+                -- self:ClearSlot(slot)  -- Clear the slot if it should not be left empty.
+            -- end
+        -- end
+    -- else
+        -- -- If no action is found and empty slots should not be skipped, clear the slot.
+        -- if not profile.skipEmptySlots and not check then
+            -- self:ClearSlot(slot)
+        -- end
+    -- end
+
+    -- return fail  -- Return the number of failures.
+-- end
 
 
 -- This function iterates through each action bar slot, checks if the slot is empty, and places the correct macro or spell based on the profile's actions.
@@ -1290,16 +1266,22 @@ function ABP:ActionButtonOverride(profileKey, profileName)
             elseif type == "spell" then
                 -- Extract the spell ID and place it in the current slot
                 local spellID = tonumber(sub)
-                C_Spell.PickupSpell(spellID)
-                PlaceAction(slot)
-
-            -- Skip if the action is not a macro or spell (e.g., battlepet, item)
+                if spellID then
+                    -- Place the spell in the current slot
+                    C_Spell.PickupSpell(spellID)
+                    PlaceAction(slot)
+                else
+                    -- Handle the case where the spellID is nil (optional)
+                    --print(string.format("Invalid spell ID for slot %d: %s", slot, name))
+                end
             else
                 -- Skipping non-macro, non-spell actions
                 --print(string.format("Skipping non-macro/non-spell action in slot %d: %s", slot, name))
             end
         end
     end
+	
+	addon:AreTalentsMatching(profile)
 end
 
 
@@ -1331,7 +1313,13 @@ function addon:RestorePetActions(profile, check, cache, res)
 
                 if type == "spell" or (type == "abp" and sub == "pet") then
                     if type == "spell" then
-                        name = C_Spell.GetSpellInfo(id).name or name
+                        local spellInfo = id and C_Spell.GetSpellInfo(id)
+                        if spellInfo then
+                            name = spellInfo.name or name
+                        else
+                            -- Handle the case where spellInfo is nil (optional)
+                            print(string.format("Invalid spell ID for slot %d: %s", slot, name))
+                        end
                     else
                         id = -2
                         name = _G[name] or name
@@ -1898,7 +1886,7 @@ end
 function addon:PreloadPetSpells(spells)
     -- Check if the player has pet spells available.
     local numPetSpells, petToken = C_SpellBook.HasPetSpells()
-    
+
     -- If the player has pet spells, proceed to cache them.
     if numPetSpells then
         -- Iterate through all available pet spells.
@@ -1928,10 +1916,10 @@ end
 -- Clears the action at the specified slot by picking it up and clearing the cursor, unless it's a mount, flyout, or a toy named "hearthstone" when Random Hearthstone addon is loaded.
 function addon:ClearSlot(slot)
     ClearCursor()  -- Ensure the cursor is cleared before starting
-    local actionType, id = GetActionInfo(slot)
-    
+    local actionType, id, subType = GetActionInfo(slot)
+
     -- Check if the action is a mount
-    if actionType == "spell" then
+    if actionType == "spell" and id then  -- Ensure 'id' is not nil before proceeding
         local spellName = C_Spell.GetSpellInfo(id)
         if C_Spell.IsSpellUsable(id) and IsSpellKnown(id) then
             -- Check if the spell is a mount
@@ -2026,7 +2014,7 @@ function addon:PlaceSpellBookItem(slot, id, tab, link, count)
     count = count or ABP_PICKUP_RETRY_COUNT  -- Default to a set number of retry attempts.
 
     ClearCursor()              -- Ensure the cursor is cleared before starting.
-    PickupSpellBookItem(id, tab) -- Attempt to pick up the spell from the spellbook.
+    C_SpellBook.PickupSpellBookItem(id, tab) -- Attempt to pick up the spell from the spellbook.
 
     -- If the cursor doesn't hold the spell, attempt to retry placement.
     if not CursorHasSpell() then
@@ -2049,7 +2037,7 @@ end
 -- Places a flyout spell into the specified slot on the action bar.
 function addon:PlaceFlyout(slot, id, tab, link, count)
     ClearCursor()              -- Ensure the cursor is cleared before starting.
-    PickupSpellBookItem(id, tab) -- Pick up the flyout spell from the spellbook using its ID and tab.
+    C_SpellBook.PickupSpellBookItem(id, tab) -- Pick up the flyout spell from the spellbook using its ID and tab.
 
     self:PlaceToSlot(slot)     -- Place the flyout spell into the specified slot on the action bar.
 end
@@ -2081,18 +2069,24 @@ function addon:PlacePvpTalent(slot, id, link, count)
     count = count or ABP_PICKUP_RETRY_COUNT  -- Set the retry count if not provided.
 
     ClearCursor()  -- Ensure the cursor is cleared before picking up the PvP talent.
-    PickupPvpTalent(id)  -- Pick up the PvP talent using its ID.
+    if type(id) == "number" then  -- Ensure that 'id' is a number.
+        ClearCursor()  -- Ensure the cursor is cleared before picking up the PvP talent.
+        ---@diagnostic disable-next-line
+        PickupPvpTalent(id)  -- Pick up the PvP talent using its ID.
 
-    if not CursorHasSpell() then  -- Check if the cursor successfully picked up the PvP talent.
-        if count > 0 then  -- If not, retry placing the PvP talent after a short delay.
-            self:ScheduleTimer(function()
-                self:PlacePvpTalent(slot, id, link, count - 1)
-            end, ABP_PICKUP_RETRY_INTERVAL)
-        else  -- If retries are exhausted, print a debug message.
-            self:cPrintf(link, DEBUG .. L.msg_cant_place_spell, link)
+        if not CursorHasSpell() then  -- Check if the cursor successfully picked up the PvP talent.
+            if count > 0 then  -- If not, retry placing the PvP talent after a short delay.
+                self:ScheduleTimer(function()
+                    self:PlacePvpTalent(slot, id, link, count - 1)
+                end, ABP_PICKUP_RETRY_INTERVAL)
+            else  -- If retries are exhausted, print a debug message.
+                self:cPrintf(link, DEBUG .. L.msg_cant_place_spell, link)
+            end
+        else
+            self:PlaceToSlot(slot)  -- If the PvP talent is successfully picked up, place it into the slot.
         end
     else
-        self:PlaceToSlot(slot)  -- If the PvP talent is successfully picked up, place it into the slot.
+        self:cPrintf(link, DEBUG .. "Invalid PvP talent ID: " .. tostring(id))
     end
 end
 
@@ -2216,32 +2210,46 @@ function GetActionName(slot)
     local actionType, id = GetActionInfo(slot)
 
     if actionType == "spell" then
-        local name = GetSpellInfo(id)
-        return name
+        if id then
+            local name = C_Spell.GetSpellInfo(id)
+            return name
+        end
 
     elseif actionType == "macro" then
-        local macroName = GetMacroInfo(id)
-        return macroName
+        if id then
+            local macroName = GetMacroInfo(id)
+            return macroName
+        end
 
     elseif actionType == "item" then
-        local itemName = GetItemInfo(id)
-        return itemName
+        if id then
+            local itemName = C_Item.GetItemInfo(id)
+            return itemName
+        end
 
     elseif actionType == "flyout" then
-        local flyoutID = id
-        local _, _, numSlots = GetFlyoutInfo(flyoutID)
-        for i = 1, numSlots do
-            local spellID = GetFlyoutSlotInfo(flyoutID, i)
-            local spellName = GetSpellInfo(spellID)
-            if spellName then
-                return spellName  -- Return the name of the first valid spell in the flyout
+        if id then
+            local flyoutID = id
+            local _, _, numSlots = GetFlyoutInfo(flyoutID)
+            if numSlots then
+                for i = 1, numSlots do
+                    local spellID = GetFlyoutSlotInfo(flyoutID, i)
+                    if spellID then
+                        local spellName = C_Spell.GetSpellInfo(spellID)
+                        if spellName then
+                            return spellName  -- Return the name of the first valid spell in the flyout
+                        end
+                    end
+                end
             end
         end
 
     elseif actionType == "mount" then
-        local mountID = id
-        local mountName = C_MountJournal.GetMountInfoByID(mountID)
-        return mountName
+        if id then
+            local mountID = id
+            local mountName = C_MountJournal.GetMountInfoByID(mountID)
+            return mountName
+        end
     end
 
     return nil
