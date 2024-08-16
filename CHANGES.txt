@@ -1,5 +1,26 @@
+11.0.2.1b
+	- Fixed some general coding issues
+
+	ActionBarProfiles.lua
+		- Removed/commented out CopyBar6To13() function as no longer used
+		- Fixed issue where profile was being restored when mousing over the LDB button
+
+	GUI.lua
+		- Fixed code from GetRealmName("player") to GetRealmName()
+
+	Restore.lua
+		- Updates to addon:AreTalentsMatching() and addon:RestoreTalents() to fix issue of talents not swapping when different choice node is used
+		- Removed/commented out PlayerTalentFrameTalent_OnClick() and addon:RestoreSingleAction() functions as no longer used
+		- API fix/replacement of PickupSpellBookItem to reflect 11.0 change to C_SpellBook.PickupSpellBookItem
+
+	Save.lua
+		- API fix/replacement of IsTalentSpell to reflect 11.0 change to C_SpellBook.IsClassTalentSpellBookItem
+		- API fix/replacement of IsPvpTalentSpell to reflect 11.0 change to C_SpellBook.IsPvPTalentSpellBookItem
+
+
 11.0.2.1
 	- Changed version number
+
 
 11.0.0.2
 	ActionBarProfiles.lua
@@ -11,6 +32,7 @@
 
 	Restore.lua
 		- Updated addon:ClearSlot(slot) function to include hearthstone toy ignore when clearing slots and also to not clear random favorite mount button
+
 
 11.0.0.1 - BETA
  - Massive changes to the SAVE and RESTORE of profiles in updating to 11.0 API coding
@@ -80,12 +102,15 @@
 		TEMP CHANGES?:
 		- Removed declaration of 'index' from addon:SaveBindings(profile) function (possibly temporarily)
 
+
 10.2.5.3
  - Fixes to talents restoring from profiles (Known Issue: talents swap automatically, when player clicks the Action Bars icon within their Character Panel, to the most applicable talent. If multiple specs within same spec, 
  it will bounce between the two of them when frame is open)
 
+
 10.2.5.2
  - Fixes to PvP talent restoration (spec/class talent restoration is a known issue)
+
 
 10.2.5.1
  - Re-release as fan-update
