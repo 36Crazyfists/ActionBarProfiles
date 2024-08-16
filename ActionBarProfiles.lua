@@ -6,7 +6,7 @@ local L = LibStub("AceLocale-3.0"):GetLocale(addonName)
 local DEBUG = "|cffff0000Debug:|r "
 
 local qtip = LibStub("LibQTip-1.0")
-
+PaperDollActionBarProfilesPane = PaperDollActionBarProfilesPane or nil
 local origGetPaperDollSideBarFrame
 local ABP_tabNum
 
@@ -33,82 +33,82 @@ function ClearBarTwo()
 end
 
 
--- Copies the actions from bar 6 to bar 13.
--- This function is a wrapper that calls the addon-specific CopyBar6To13 method.
-function CopyBar6To13()
-    return addon:CopyBar6To13()  -- Invoke the method to copy bar 6 actions to bar 13.
-end
+-- -- Copies the actions from bar 6 to bar 13.
+-- -- This function is a wrapper that calls the addon-specific CopyBar6To13 method.
+-- function CopyBar6To13()
+    -- return addon:CopyBar6To13()  -- Invoke the method to copy bar 6 actions to bar 13.
+-- end
 
 
--- This function copies action bar slots 6 to 13, ensuring the actions in slots 6-12 are migrated to slots 145-156.
--- It is used to automatically migrate action bars during a profile update or UI overhaul.
-function addon:CopyBar6To13()
-    -- Create a unique identifier for the player using their name, realm, and specialization.
-    local player = UnitName("player") .. "-" .. GetRealmName("player") .. "-" .. GetSpecializationInfo(GetSpecialization())
+-- -- This function copies action bar slots 6 to 13, ensuring the actions in slots 6-12 are migrated to slots 145-156.
+-- -- It is used to automatically migrate action bars during a profile update or UI overhaul.
+-- function addon:CopyBar6To13()
+    -- -- Create a unique identifier for the player using their name, realm, and specialization.
+    -- local player = UnitName("player") .. "-" .. GetRealmName() .. "-" .. GetSpecializationInfo(GetSpecialization())
 
-    -- Variables to track the number of found actions in slots 13-24 and 145-156, and the number of failures during the copy process.
-    local found13 = 0
-    local found6 = 0
-    local fail = 0
+    -- -- Variables to track the number of found actions in slots 13-24 and 145-156, and the number of failures during the copy process.
+    -- local found13 = 0
+    -- local found6 = 0
+    -- local fail = 0
 
-    -- Prevent infinite loops by limiting the number of copy attempts to 10.
-    if CopyAttempts > 10 then
-        return
-    end
-    CopyAttempts = CopyAttempts + 1
+    -- -- Prevent infinite loops by limiting the number of copy attempts to 10.
+    -- if CopyAttempts > 10 then
+        -- return
+    -- end
+    -- CopyAttempts = CopyAttempts + 1
 
-    -- If the player has already been migrated, exit the function early.
-    if self.db.profile.migrated[player] then
-        return
-    end
+    -- -- If the player has already been migrated, exit the function early.
+    -- if self.db.profile.migrated[player] then
+        -- return
+    -- end
 
-    -- Count the number of actions in slots 145-156 (bars 13-24).
-    for i = 145, 156 do
-        local type, id, sub = GetActionInfo(i)
-        if type ~= nil then
-            found13 = found13 + 1
-        end
-    end
+    -- -- Count the number of actions in slots 145-156 (bars 13-24).
+    -- for i = 145, 156 do
+        -- local type, id, sub = GetActionInfo(i)
+        -- if type ~= nil then
+            -- found13 = found13 + 1
+        -- end
+    -- end
 
-    -- Count the number of actions in slots 13-24 (bars 6-12).
-    for i = 13, 24 do
-        local type, id, sub = GetActionInfo(i)
-        if type ~= nil then
-            found6 = found6 + 1
-        end
-    end
+    -- -- Count the number of actions in slots 13-24 (bars 6-12).
+    -- for i = 13, 24 do
+        -- local type, id, sub = GetActionInfo(i)
+        -- if type ~= nil then
+            -- found6 = found6 + 1
+        -- end
+    -- end
 
-    -- Debugging output to show how many actions were found in each set of slots.
-    print("Found6: " .. found6)
-    print("Found13: " .. found13)
+    -- -- Debugging output to show how many actions were found in each set of slots.
+    -- print("Found6: " .. found6)
+    -- print("Found13: " .. found13)
 
-    -- If there are more actions in slots 13-24, copy them to slots 145-156.
-    if found6 > found13 then
-        print("Copying Bars from 6 to 13")
-        -- Create a cache of the current state to avoid overwriting existing actions.
-        local cache = addon:MakeCache()
+    -- -- If there are more actions in slots 13-24, copy them to slots 145-156.
+    -- if found6 > found13 then
+        -- print("Copying Bars from 6 to 13")
+        -- -- Create a cache of the current state to avoid overwriting existing actions.
+        -- local cache = addon:MakeCache()
         
-        -- Iterate over each slot from 13 to 24 and copy the action to the corresponding slot in bars 13-24.
-        for i = 13, 24 do
-            -- Save the action in the current slot.
-            local action = addon:SaveSingleAction(i)
-            -- Restore the saved action to the new slot, adjusting for the offset (132).
-            fail = fail + addon:RestoreSingleAction(action, i + 132, cache)
-        end
+        -- -- Iterate over each slot from 13 to 24 and copy the action to the corresponding slot in bars 13-24.
+        -- for i = 13, 24 do
+            -- -- Save the action in the current slot.
+            -- local action = addon:SaveSingleAction(i)
+            -- -- Restore the saved action to the new slot, adjusting for the offset (132).
+            -- fail = fail + addon:RestoreSingleAction(action, i + 132, cache)
+        -- end
         
-        -- If no failures occurred, schedule another attempt after 1 second to ensure all actions are copied.
-        if fail == 0 then
-            C_Timer.After(1, function() addon:CopyBar6To13(); end)
-        end
-    else
-        -- Mark the player as migrated if the action bars have been successfully copied.
-        if not self.db.profile.migrated then
-            self.db.profile.migrated = {}
-        end
-        self.db.profile.migrated[player] = true
-    end
-    return
-end
+        -- -- If no failures occurred, schedule another attempt after 1 second to ensure all actions are copied.
+        -- if fail == 0 then
+            -- C_Timer.After(1, function() addon:CopyBar6To13(); end)
+        -- end
+    -- else
+        -- -- Mark the player as migrated if the action bars have been successfully copied.
+        -- if not self.db.profile.migrated then
+            -- self.db.profile.migrated = {}
+        -- end
+        -- self.db.profile.migrated[player] = true
+    -- end
+    -- return
+-- end
 
 
 -- Conditional Print Function with Formatting
@@ -169,7 +169,8 @@ function addon:OnInitialize()
         OnLeave = function() end,
         OnClick = function(obj, button)
             if button == "RightButton" then
-                InterfaceOptionsFrame_OpenToCategory(addonName) -- Open options on right-click.
+                --InterfaceOptionsFrame_OpenToCategory(addonName) -- Open options on right-click.
+                Settings.OpenToCategory(addonName) -- Open options on right-click.
             else
                 ToggleCharacter("PaperDollFrame") -- Toggle character frame on left-click.
             end
@@ -184,7 +185,7 @@ function addon:OnInitialize()
     for profileName, profile in pairs(self.db.profile.list) do
         if not profile.specID then
             profile.specID = GetSpecializationInfo(GetSpecialization())
-            print("Updated specID for profile: " .. profileName)
+            --print("Updated specID for profile: " .. profileName)
         end
     end
 
@@ -231,7 +232,7 @@ function addon:OnInitialize()
             self.specTimer = nil
 
             -- Create a unique identifier for the player using their name, realm, and current spec.
-            local player = UnitName("player") .. "-" .. GetRealmName("player")
+            local player = UnitName("player") .. "-" .. GetRealmName()
             local spec = GetSpecializationInfo(GetSpecialization())
 
             -- If the spec has changed or is new, update the previous spec and load the favorite profile for the current spec.
@@ -404,7 +405,9 @@ function addon:ShowTooltip(anchor)
         -- Check if the tooltip is already acquired; if not, acquire a new tooltip instance.
         if not (qtip:IsAcquired(addonName) and self.tooltip) then
             -- Acquire a new tooltip with the addon name and set the number of columns to 2, with the first column left-aligned.
-            self.tooltip = qtip:Acquire(addonName, 2, "LEFT")
+            ---@class CustomTooltip : LibQTip.Tooltip
+            ---@field OnRelease fun(self: CustomTooltip)
+            self.tooltip = qtip:Acquire(addonName, 2, "LEFT") ---@type CustomTooltip
 
             -- Set a function to clear the tooltip reference when it is released.
             self.tooltip.OnRelease = function()
@@ -457,18 +460,18 @@ function addon:UpdateTooltip(tooltip)
             local name = profile.name
             local color = NORMAL_FONT_COLOR
 
-            -- If the profile's class does not match the player's class, use gray text color.
-            if profile.class ~= class then
-                color = GRAY_FONT_COLOR
-            else
-                -- If the profile's class matches the player's, attempt to use the profile in a test mode.
-                local fail, total = addon:UseProfile(profile, true, cache)
-                if fail > 0 then
-                    -- If there are failures, set the text color to red and append the fail/total count to the name.
-                    color = RED_FONT_COLOR
-                    name = name .. string.format(" (%d/%d)", fail, total)
-                end
-            end
+            -- -- If the profile's class does not match the player's class, use gray text color.  -- COMMENTED OUT AS THIS RESULTS IN RESTORE TAKING PLACE WHEN MOUSING OVER THE LDB BUTTON
+            -- if profile.class ~= class then
+                -- color = GRAY_FONT_COLOR
+            -- else
+                -- -- If the profile's class matches the player's, attempt to use the profile in a test mode.
+                -- local fail, total = addon:UseProfile(profile, true, cache)
+                -- if fail > 0 then
+                    -- -- If there are failures, set the text color to red and append the fail/total count to the name.
+                    -- color = RED_FONT_COLOR
+                    -- name = name .. string.format(" (%d/%d)", fail, total)
+                -- end
+            -- end
 
             -- Add the profile to the tooltip with its icon (if it has one) or class icon.
             if profile.icon then
