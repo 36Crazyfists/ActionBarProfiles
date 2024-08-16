@@ -155,6 +155,9 @@ end
 function addon:SaveActions(profile)
     local flyouts, tsNames, tsIds = {}, {}, {}
 
+    ---@class SpellBookSkillLineInfo
+    ---@field itemIndexOffset number
+
     for skillLineIndex = 1, C_SpellBook.GetNumSpellBookSkillLines() do
         local skillLineInfo = C_SpellBook.GetSpellBookSkillLineInfo(skillLineIndex)
         local offset = skillLineInfo.itemIndexOffset
@@ -163,14 +166,16 @@ function addon:SaveActions(profile)
 
         if spec == 0 then
             for index = offset + 1, offset + count do
+            ---@type Enum.SpellBookSpellBank
+            local spellBookBankType = Enum.SpellBookSpellBank.Player
                 local type, id = C_SpellBook.GetSpellBookItemType(index, Enum.SpellBookSpellBank.Player)
                 local name = C_SpellBook.GetSpellBookItemName(index, Enum.SpellBookSpellBank.Player)
 
                 if type == "FLYOUT" then
                     flyouts[id] = name
-                elseif type == "SPELL" and IsTalentSpell(index, Enum.SpellBookSpellBank.Player) then
+                elseif type == "SPELL" and C_SpellBook.IsClassTalentSpellBookItem(index, Enum.SpellBookSpellBank.Player) then
                     tsNames[name] = id
-                elseif type == "SPELL" and IsPvpTalentSpell(index, Enum.SpellBookSpellBank.Player) then
+                elseif type == "SPELL" and C_SpellBook.IsPvPTalentSpellBookItem(index, Enum.SpellBookSpellBank.Player) then
                     tsNames[name] = id
                 end
             end
@@ -179,10 +184,17 @@ function addon:SaveActions(profile)
 
     local talents = {}
     local configID = C_ClassTalents.GetActiveConfigID()
-    if configID == nil then return end
+    if not configID then return end
 
-    local configInfo = C_Traits.GetConfigInfo(configID)
-    if configInfo == nil then return end
+    ---@class TraitConfigInfo
+    ---@field ID number
+    ---@field type Enum.TraitConfigType
+    ---@field name string
+    ---@field treeIDs number[]
+    ---@field usesSharedActionBars boolean
+
+    local configInfo = C_Traits.GetConfigInfo(configID) ---@type TraitConfigInfo
+    if not configInfo or not configInfo.treeIDs then return end
 
     for _, treeID in ipairs(configInfo.treeIDs) do
         local nodes = C_Traits.GetTreeNodes(treeID)
@@ -193,13 +205,19 @@ function addon:SaveActions(profile)
             for _, entryID in pairs(nodeInfo.entryIDsWithCommittedRanks) do
                 local entryInfo = C_Traits.GetEntryInfo(configID, entryID)
 
+                ---@class TraitEntryInfo
+                ---@field entryID number
+                ---@field rank number
+                ---@field definitionID number
                 if entryInfo and entryInfo.definitionID then
                     local definitionInfo = C_Traits.GetDefinitionInfo(entryInfo.definitionID)
 
+                    ---@class TraitDefinitionInfo
+                    ---@field spellID number
                     if definitionInfo.spellID then
                         local spellInfo = C_Spell.GetSpellInfo(definitionInfo.spellID)
                         if spellInfo and spellInfo.name then
-                            local isFreeTalent = nodeInfo.isFree -- Assuming there's a flag like this for free talents
+                            local isFreeTalent = nodeInfo.currentRank > 0 and nodeInfo.ranksPurchased == 0 and not nodeInfo.canPurchaseRank
                             talents[#talents + 1] = {
                                 nodeID = nodeInfo.ID,
                                 entryID = entryID,
@@ -210,8 +228,8 @@ function addon:SaveActions(profile)
                                 isSelectionNode = #nodeInfo.entryIDs > 1,
                                 posX = nodeInfo.posX,
                                 posY = nodeInfo.posY,
-                                row = nodeInfo.row,
-                                column = nodeInfo.column,
+                                --row = nodeInfo.row,   -- "row" and "column" are not part of officially documented field within TraitNodeInfo
+                                --column = nodeInfo.column,
                                 isFreeTalent = isFreeTalent or false -- Flag to identify free talents
                             }
                         else
@@ -233,6 +251,7 @@ function addon:SaveActions(profile)
 
     for tier = 1, #pvpTalentIDs do
         -- Save the PvP Talent Link
+        ---@diagnostic disable-next-line: redundant-parameter
         pvpTalents[tier] = GetPvpTalentLink(pvpTalentIDs[tier])
         --print("pvpTalents [Tier] are: " .. pvpTalents[tier])
 
@@ -249,13 +268,16 @@ function addon:SaveActions(profile)
     local actions = {}
     local savedMacros = {}
 
+    -- Check if the RandomHearth addon is loaded
+    local _, isRandomHearthstoneLoaded = C_AddOns.IsAddOnLoaded("RandomHearth")
+
     for slot = 1, ABP_MAX_ACTION_BUTTONS do
         local type, id, sub = GetActionInfo(slot)  -- Retrieve action info for the slot
 
         if type == "spell" then
             if tsIds[id] then
                 actions[slot] = GetTalentLink(tsIds[id])
-            else
+            elseif id then
                 actions[slot] = C_Spell.GetSpellLink(id)  -- Save spell link
             end
 
@@ -268,52 +290,81 @@ function addon:SaveActions(profile)
             end
 
         elseif type == "item" then
-            -- Use the new API to get item info
-            local itemName, itemLink = C_Item.GetItemInfo(id)
-            if itemLink then
-                actions[slot] = itemLink  -- Save item link
+            -- Ensure id is not nil before using it
+            if id then
+                -- Use the new API to get item info
+                local itemName, itemLink = C_Item.GetItemInfo(id)
+                if itemLink then
+                    actions[slot] = itemLink  -- Save item link
+                else
+                    -- If item is not yet cached, you might want to handle it asynchronously
+                    actions[slot] = string.format("|cffff0000|Habp:item:%d|h[%s]|h|r", id, "Unknown Item")
+                end
             else
-                -- If item is not yet cached, you might want to handle it asynchronously
-                actions[slot] = string.format("|cffff0000|Habp:item:%d|h[%s]|h|r", id, "Unknown Item")
+                -- Handle the case where id is nil
+                actions[slot] = "|cffff0000|Habp:item:0|h[Unknown Item]|h|r"
             end
 
         elseif type == "companion" then
-            if sub == "MOUNT" then
+            if sub == "MOUNT" and id then
                 actions[slot] = C_Spell.GetSpellLink(id)  -- Save mount spell link
+            else
+                -- Handle the case where id is nil or sub is not "MOUNT"
+                actions[slot] = "|cffff0000|Habp:companion:0|h[Unknown Mount]|h|r"
             end
 
         elseif type == "summonpet" then
-            actions[slot] = C_PetJournal.GetBattlePetLink(id)  -- Save battle pet link
+            if id then
+                actions[slot] = C_PetJournal.GetBattlePetLink(id)  -- Save battle pet link
+            else
+                -- Handle the case where id is nil
+                actions[slot] = "|cffff0000|Habp:summonpet:0|h[Unknown Pet]|h|r"
+            end
 
         elseif type == "summonmount" then
             if id == 0xFFFFFFF then
                 actions[slot] = C_Spell.GetSpellLink(ABP_RANDOM_MOUNT_SPELL_ID)  -- Save random mount spell link
+            elseif id then  -- Ensure id is not nil before using it
+                local mountInfo = C_MountJournal.GetMountInfoByID(id)
+                if mountInfo and mountInfo[2] then
+                    actions[slot] = C_Spell.GetSpellLink(mountInfo[2])  -- Save specific mount spell link
+                else
+                    -- Handle the case where mountInfo or the specific mount ID is nil
+                    actions[slot] = "|cffff0000|Habp:summonmount:0|h[Unknown Mount]|h|r"
+                end
             else
-                actions[slot] = C_Spell.GetSpellLink(({ C_MountJournal.GetMountInfoByID(id) })[2])  -- Save specific mount spell link
+                -- Handle the case where id is nil
+                actions[slot] = "|cffff0000|Habp:summonmount:0|h[Unknown Mount]|h|r"
             end
 
         elseif type == "macro" then
             -- Can't trust id from GetActionInfo
             local macroName = GetActionText(slot)
-            local macroIndex = GetMacroIndexByName(macroName)
-            if macroIndex > 0 then
-                local name, icon, body = GetMacroInfo(macroName)
 
-                icon = icon or ABP_EMPTY_ICON_TEXTURE_ID
+            if macroName then  -- Ensure macroName is not nil before proceeding
+                local macroIndex = GetMacroIndexByName(macroName)
+                if macroIndex > 0 then
+                    local name, icon, body = GetMacroInfo(macroName)
 
-                if macroIndex > MAX_ACCOUNT_MACROS then
-                    actions[slot] = string.format(
-                        "|cffff0000|Habp:macro:%s:%s|h[%s]|h|r",
-                        icon, self:EncodeLink(body), name
-                    )
-                else
-                    actions[slot] = string.format(
-                        "|cffff0000|Habp:macro:%s:%s:1|h[%s]|h|r",
-                        icon, self:EncodeLink(body), name
-                    )
+                    icon = icon or ABP_EMPTY_ICON_TEXTURE_ID
+
+                    if macroIndex > MAX_ACCOUNT_MACROS then
+                        actions[slot] = string.format(
+                            "|cffff0000|Habp:macro:%s:%s|h[%s]|h|r",
+                            icon, self:EncodeLink(body), name
+                        )
+                    else
+                        actions[slot] = string.format(
+                            "|cffff0000|Habp:macro:%s:%s:1|h[%s]|h|r",
+                            icon, self:EncodeLink(body), name
+                        )
+                    end
+
+                    savedMacros[macroIndex] = true  -- Mark macro as saved
                 end
-
-                savedMacros[macroIndex] = true  -- Mark macro as saved
+            else
+                -- Handle the case where macroName is nil
+                actions[slot] = "|cffff0000|Habp:macro:0|h[Unknown Macro]|h|r"
             end
 
         elseif type == "equipmentset" then
