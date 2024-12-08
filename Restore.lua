@@ -100,10 +100,21 @@ function addon:UseProfile(profile, check, cache)
         self:UpdateGUI()
     end
 
+    self:RefreshMacroIcons()
+
     -- Return the number of failed and total restoration attempts
     return res.fail, res.total
 end
 
+-- if a macro starts with "#showtooltip", reset icon to the question mark so they can be dynamic
+function addon:RefreshMacroIcons()
+    for index = 1, MAX_ACCOUNT_MACROS + MAX_CHARACTER_MACROS do
+        name, icon, body = GetMacroInfo(index)
+        if body and strsub(body, 0, 12) == "#showtooltip" then
+            index = EditMacro(index, name, 134400, body) -- 134400 is the question mark icon
+        end
+    end
+end
 
 -- Function to restore macros based on a given profile, with an option to check without actually applying the changes
 function addon:RestoreMacros(profile, check, cache, res)
