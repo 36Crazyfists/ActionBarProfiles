@@ -111,9 +111,11 @@ end
 function addon:RefreshMacroIcons()
     for index = 1, MAX_ACCOUNT_MACROS + MAX_CHARACTER_MACROS do
         name, icon, body = GetMacroInfo(index)
-        local bodyWithoutSpaces = string.gsub(body, "%s+", "")
-        if string.sub(bodyWithoutSpaces, 0, 13) == "#showtooltip/" then
-            index = EditMacro(index, name, 134400, body) -- 134400 is the question mark icon
+        if body then
+            local bodyWithoutSpaces = string.gsub(body, "%s+", "")
+            if string.sub(bodyWithoutSpaces, 0, 13) == "#showtooltip/" then
+                index = EditMacro(index, name, 134400, body) -- 134400 is the question mark icon
+            end
         end
      end
 end
