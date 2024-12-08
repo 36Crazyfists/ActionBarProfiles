@@ -106,14 +106,16 @@ function addon:UseProfile(profile, check, cache)
     return res.fail, res.total
 end
 
--- if a macro starts with "#showtooltip", reset icon to the question mark so they can be dynamic
+-- if a macro starts with "#showtooltip", and has no argument, reset icon to the question mark so they can be dynamic
+-- More info about #showtooltip here: https://warcraft.wiki.gg/wiki/MACRO_metashowtooltip
 function addon:RefreshMacroIcons()
     for index = 1, MAX_ACCOUNT_MACROS + MAX_CHARACTER_MACROS do
         name, icon, body = GetMacroInfo(index)
-        if body and strsub(body, 0, 12) == "#showtooltip" then
+        local bodyWithoutSpaces = string.gsub(body, "%s+", "")
+        if string.sub(bodyWithoutSpaces, 0, 13) == "#showtooltip/" then
             index = EditMacro(index, name, 134400, body) -- 134400 is the question mark icon
         end
-    end
+     end
 end
 
 -- Function to restore macros based on a given profile, with an option to check without actually applying the changes
